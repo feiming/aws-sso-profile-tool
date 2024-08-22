@@ -208,7 +208,7 @@ do
 	fi
 	
 	safeacctname=$(echo ${acctname} | sed -E 's/( |-)+/-/g')
-	p="$safeacctname-$acctnum"
+	p="$safeacctname-$rolename"
 	while true ; do
 	    if $interactive ;
 	    then
