@@ -207,7 +207,8 @@ do
 	    defoutput=$output
 	fi
 	
-	p="$rolename-$acctnum"
+	safeacctname=$(echo ${acctname} | sed -E 's/( |-)+/-/g')
+	p="$safeacctname-$acctnum"
 	while true ; do
 	    if $interactive ;
 	    then
