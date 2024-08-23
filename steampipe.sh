@@ -20,16 +20,25 @@
 #
 # Syntax:
 #
-# ssoprofiletool <region> <start_url> [<profile_file>]
+# steampipe.sh <region> <start_url> [<steampipe_file>]
 #
 # <region> is the region where AWS SSO is configured (e.g., us-east-1)
 # <start_url> is the AWS SSO start URL
 # <profile_file> is the file where the profiles will be written (default is
-#    ~/.aws/config)
+#    ~/.steampipe/config/aws.spc)
+
+find_aws_profile() {                                                            
+    account=$1
+
+	profile_name=$(tail -r ~/.aws/config | grep -A 10 " = ${account}" | grep -m1 "\[profile" | cut -d" " -f2 | cut -d "]" -f1)
+	if [ -n "$profile_name" ]; then
+		echo ${profile_name}
+	fi
+}
 
 ACCOUNTPAGESIZE=10
 ROLEPAGESIZE=10
-PROFILEFILE="$HOME/.aws/config"
+PROFILEFILE="$HOME.steampipe/config/aws.spc"
 
 if [ $# -lt 2 ];
 then
@@ -172,88 +181,19 @@ do
 
     # Set up trap to clean up both temp files
     trap '{ rm -f "$rolesfile" "$acctsfile"; echo; exit 255; }' SIGINT SIGTERM
-    
-    aws sso list-account-roles --account-id "$acctnum" --access-token "$token" --page-size $ROLEPAGESIZE --region "$1" --output text > "$rolesfile"
 
-    if [ $? -ne 0 ];
-    then
-	echo "Failed to retrieve roles."
-	exit 1
-    fi
-
-    while IFS=$'\t' read junk junk rolename;
-    do
-	echo
-	if $interactive ;
-	then
-	    echo -n "Create a profile for $rolename role? (Y/n): "
-	    read create < /dev/tty
-	    if [ -z "$create" ];
-	    then
-		:
-	    elif [ "$create" == 'n' ] || [ "$create" == 'N' ];
-	    then
-		continue
-	    fi
-	    
-	    echo
-	    echo -n "CLI default client Region [$defregion]: "
-	    read awsregion < /dev/tty
-	    if [ -z "$awsregion" ]; then awsregion=$defregion ; fi
-	    defregion=$awsregion
-	    echo -n "CLI default output format [$defoutput]: "
-	    read output < /dev/tty
-	    if [ -z "$output" ]; then output=$defoutput ; fi
-	    defoutput=$output
-	fi
-	
-	safeacctname=$(echo ${acctname} | sed -E 's/( |-)+/-/g')
-	p="aws_$acctnum"
-	while true ; do
-	    if $interactive ;
-	    then
-		echo -n "CLI profile name [$p]: "
-		read profilename < /dev/tty
-		if [ -z "$profilename" ]; then profilename=$p ; fi
-		if [ -f "$profilefile" ];
-		then
-		    :
-		else
-		    break
-		fi
-	    else
-		profilename=$p
-	    fi
-	    
-	    if [ $(grep -ce "^\s*\[\s*profile\s\s*$profilename\s*\]" "$profilefile") -eq 0 ];
-	    then
-		break
-	    else
-		echo "Profile name already exists!"
-		if $interactive ;
-		then
-		    :
-		else
-		    echo "Skipping..."
-		    continue 2
-		fi
-	    fi
-	done
+	profileacctname=$(find_aws_profile "$acctnum")
 	echo -n "Creating $profilename... "
 	echo "" >> "$profilefile"
-	echo "[profile $profilename]" >> "$profilefile"
-	echo "sso_start_url = $2" >> "$profilefile"
-	echo "sso_region = $1" >> "$profilefile"
-	echo "sso_account_id = $acctnum" >> "$profilefile"
-	echo "sso_role_name = $rolename" >> "$profilefile"
-	echo "region = $awsregion" >> "$profilefile"
-	echo "output = $output" >> "$profilefile"
-	echo "retry_mode = adaptive" >> "$profilefile"
-	echo "max_attempts = 30" >> "$profilefile"
-	echo "Succeeded"
+	echo "connection \"$profileacctname\" {" >> "$profilefile"
+	echo "  plugin         = \"aws\"" >> "$profilefile"
+	echo "  regions        = [\"*\"]" >> "$profilefile"
+	echo "  profile        = \"$profileacctname\"" >> "$profilefile"
+	echo "  default_region = \"$awsregion\"" >> "$profilefile"
+	echo "  ignore_error_codes = [\"AccessDenied\", \"AccessDeniedException\", \"NotAuthorized\", \"UnauthorizedOperation\", \"UnrecognizedClientException\", \"AuthorizationError\"]" >> "$profilefile"
+	echo "}" >> "$profilefile"
+	echo "Succeeded"	
 	created_profiles+=("$profilename")
-    done < "$rolesfile"
-    rm "$rolesfile"
 
     echo
     echo "Done adding roles for AWS account $acctnum ($acctname)"
