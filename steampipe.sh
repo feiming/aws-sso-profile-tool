@@ -27,7 +27,7 @@
 # <profile_file> is the file where the profiles will be written (default is
 #    ~/.steampipe/config/aws.spc)
 
-find_aws_profile() {                                                            
+find_aws_profile() {
     account=$1
 
 	profile_name=$(tail -r ~/.aws/config | grep -A 10 " = ${account}" | grep -m1 "\[profile" | cut -d" " -f2 | cut -d "]" -f1)
